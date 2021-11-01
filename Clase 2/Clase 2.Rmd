@@ -1,0 +1,551 @@
+---
+title: "Herramientas para el Análisis de Series de Tiempo en R - Clase 2"
+author: "Oficina de la CEPAL en Buenos Aires"
+date: "Octubre 2021"
+output:
+  prettydoc::html_pretty:
+    theme: architect
+    fig_height: 5
+    fig_width: 8
+    toc: yes
+    toc_depth: 2
+  html_document:
+    toc: yes
+    toc_depth: '2'
+    df_print: paged
+  html_notebook:
+    code_folding: show
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+library(prettydoc)
+```
+
+```{r, include=FALSE}
+
+##  Limpiar la memoria
+rm(list=ls())
+
+## Apertura de librerias
+library(tidyverse)  #Manejo de bases de datos y otros
+library(openxlsx)   #Lectura de xlsx
+library(lubridate)  #Manejo de variables en formato fecha
+library(zoo)        #Series de tiempo
+library(forecast)   #Pronosticos
+library(ggfortify)  #Graficos
+library(kableExtra)
+
+```
+
+# Introducción
+
+En esta segunda clase vamos a hacer un repaso del modelo lineal y de su estimación a partir del método de mínimos cuadrados ordinarios (MCO), vamos a interpretar los resultados de la regresión, y vamos a ver un conjunto de métricas para seleccionar el modelo que mejor ajusta a una determinada muestra de datos.
+
+Luego, en el módulo práctico, aprenderemos cómo realizar estimaciones por MCO con R, y cómo obtener las métricas vistas en el módulo conceptual.
+
+
+# Módulo conceptual
+
+## Modelo lineal
+
+En el modelo de regresión más simple se establece una relación lineal entre dos variables, en la cual se desea explicar cómo varía una de ellas ($y$) en función de la variación de la otra ($x$). 
+
+\begin{align*}
+𝑦=\beta_{0}+\beta_{1}x+u \\
+\end{align*}
+
+Donde:
+
+$y$: Variable explicada o dependiente.
+
+$x$: Variable explicativa o independiente.
+
+$u$: Término de error (factores distintos a $x$ que a afectan a $y$, y que son no observables).
+
+$\beta_{0}$: constante o intercepto.
+
+$\beta_{1}$: parámetro de la pendiente en la relación entre $x$ y $y$, cuando todos los demás factores en $u$ permanecen constantes.
+
+Si los demás factores en 𝒖 permanecen constantes, de manera que el cambio en $u$ sea cero, entonces $x$ tiene un efecto lineal sobre $y$:
+
+\begin{align*}
+\Delta y=\beta_{1}\Delta x  \ si \  \Delta u=0 \\
+\end{align*}
+
+Por tanto, el cambio en $y$ es $\beta_{1}$ multiplicado por el cambio en $x$. Esto significa que $\beta_{1}$ es el parámetro de la pendiente en la relación entre $y$ y $x$, cuando todos los demás factores en 𝒖 permanecen constantes. Este es el parámetro de interés primordial.
+
+La linealidad de la ecuación implica que todo cambio en $x$ tiene siempre el mismo efecto sobre $y$, sin importar el valor inicial de $x$. Notar que nos estamos refiriendo a la linealidad de los parámetros y no a la forma funcional de las variables. No obstante, en muchas aplicaciones de la economía la linealidad de los parámetros no es un supuesto realista. Por este motivo hay estrategias para abordar estas situaciones, que incluyen las interacciones y las estimaciones por umbrales.
+
+
+### Supuesto para asumir relación *ceteris paribus*: media condicional cero
+Un supuesto de vital importancia para poder formular conclusiones *ceteris paribus* acerca de cómo afecta $x$ a $y$ (en una muestra aleatoria), es el de media condicional cero.
+
+\begin{align*}
+E(u|x)=0  \\
+\end{align*}
+
+El supuesto de media condicional cero proporciona otra interpretación de $\beta_{1}$:
+
+\begin{align*}
+𝐸(y|x)=\beta_{0}+\beta_{1}x \\
+\end{align*}
+
+La ecuación muestra que en la función de regresión poblacional (FRP), $𝐸(𝑦|𝑥)$ es una función lineal de $x$. La linealidad significa que por cada aumento de una unidad en $x$ el valor esperado de $y$ se modifica en la cantidad $\beta_{1}$. Dado cualquier valor de $x$, la distribución de $y$ está centrado en $𝐸(𝑦|𝑥)$.
+
+**Importante:** Esta ecuación dice cómo varía el valor promedio de $y$ de acuerdo con la variación de $x$, y  no dice que $𝒚$ sea igual a $\beta_{0}+\beta_{1}x$ para cada valor de la población. 
+
+
+### Condiciones para asumir media condicional cero
+
+**1. La media del error en la población es cero.** Esto se obtiene directamente de incluir el intercepto en la regresión, y no requiere de asumir una determinada relación entre las variables.
+
+\begin{align*}
+𝐸(𝑢)=0 \\
+\end{align*}
+
+**2. El valor esperado de $𝒖$ no depende del valor de $x$.** Este supuesto indica que el valor promedio de los factores no observables es el mismo en todas las fracciones de la población determinados por los valores de $𝑥$ y que este promedio común es necesariamente igual al promedio de $𝑢$ en toda la población.
+
+\begin{align*}
+𝐸(𝑢|𝑥)=𝐸(𝑢) \\
+\end{align*}
+
+
+## Mínimos Cuadrados Ordinarios (MCO)
+
+### Condiciones de primer orden
+
+Para obtener los estimadores del intercepto ($\beta_{0}$) y de la pendiente de la función de regresión poblacional ($\beta_{1}$), el método de mínimos cuadrados ordinarios parte de los dos supuestos anteriores (conocidos como condiciones de primer orden):
+
+**1. La esperanza del término de error es igual a cero**
+
+\begin{align*}
+𝐸(𝑢)=0 \\
+\end{align*}
+
+
+**2. El término de error no está correlacionado con 𝒙 en la población**
+
+\begin{align*}
+𝐶𝑜𝑣(𝑥,𝑢)=𝐸(𝑥𝑢)=0 \\
+\end{align*}
+
+
+Partiendo de estos supuestos es posible derivar estimadores de los parámetros poblacionales que minimicen la suma de residuales cuadrados. 
+
+
+A los fines de simplificar la interpretación presentamos los estimadores para un modelo univariado:
+
+**Función de regresión poblacional (FRP):**
+
+$𝐸(𝑦|𝑥)=𝛽_{0}+𝛽_{1} 𝑥$
+
+**Función de regresión muestral (FRM):**
+
+$\hat{y}=\hat{𝛽}_{0}+\hat{𝛽}_{1} 𝑥$
+
+**Pendiente de la FRM:**
+
+$\hat{𝛽}_{1}=\frac{\sum_{i=1}^{n}(x_{i}-\overline{x})(y_{i}-\overline{y})}{\sum_{i=1}^{n}(x_{i}-\overline{x})^{2}}$
+
+**Intercepto de la FRM:**
+
+$\hat{𝛽}_{0}=\overline{y}-\hat{𝛽}_{1} \overline{x}$
+
+
+### Desvío estándar de los parámetros y del residuo
+
+El desvío estándar de los parámetros y del residuo son fundamentales para poder realizar una inferencia estadística sobre los parámetros poblacionales, tanto a partir de la obtención de los intervalos de confianza, como de las pruebas de hipótesis. En la medida que se conozca su distribución, un menor desvío estándar nos permitirá obtener estimaciones más precisas de los parámetros. Esto se reflejará en que obtendremos intervalos de confianza más estrechos y que será menor la probabilidad de no rechazar la hipótesis nula del test de hipótesis ante la presencia de parámetros distintos a cero (siempre que esa sea nuestra hipótesis nula).
+
+Las varianzas de los estimadores y del residuo se definen de la siguiente forma:
+
+**Varianza de $\beta_{1}$**:
+
+\begin{align*}
+\hat{\sigma}_{\beta_{1}}^{2}=Var(\hat{\beta_{1}})=\frac{\hat{\sigma}^{2}}{\sum_{i=1}^{n}(x_{i}-\overline{x})^{2}} \\
+\end{align*}
+
+**Varianza del error**:
+
+\begin{align*}
+\hat{\sigma}^{2}=\frac{1}{n-2}\sum_{=1}^{𝑛}\hat{u}_{i}^{2} \\
+\end{align*}
+
+* **En el término del error se prefiere una menor variabilidad**: cuanto mayor sea la varianza del error ($\hat{\sigma}^{2}$), mayor es $\hat{\sigma}_{\beta_{1}}^{2}$. Es decir que, a una mayor variación en los factores no observables que afectan a $𝑦$, más difícil es estimar $\beta_{1}$ con precisión.
+
+* **En la variable independiente se prefiere una mayor variabilidad**: a medida que aumenta la variabilidad de las $𝑥_{𝑖}$ la varianza de $\hat{\beta}_{1}$ disminuye. Esto es así porque cuanto más dispersa sea la muestra de las variables independientes, más fácil será hallar la relación entre $𝐸(𝑦|𝑥)$ y $𝑥$. Es decir, será más sencillo estimar $𝛽_{1}$. Si hay poca variación en las $𝑥_{i}$, entonces puede ser difícil hallar cómo varía $𝐸(𝑦|𝑥)$ con la variación en $𝑥$.
+
+* A medida que se incrementa el tamaño de la muestra, también aumenta la variación total de las $𝑥_{𝑖}$. Por este motivo es que siempre se busca que el tamaño de la muestra sea lo más grande posible.
+
+#### Estimar intervalos de confianza
+
+Una primera utilidad de la varianza y del desvío estándar de los estimadores y del residuo es calcular los intervalos de confianza. A continuación se presenta un ejemplo para un modelo univariado con un nivel de confianza del 95% (percentil 97,5% de una distribución t de Student).
+
+Intervalo de confianza para los **estimadores**:
+
+\begin{align*}
+\hat{\beta_{1}}±1,96 \hat{\sigma}_{\beta_{1}} \\
+\end{align*}
+
+Intervalo de confianza para la **variable dependiente**:
+
+\begin{align*}
+\hat{y_{1}}±1,96 \hat{\sigma} \\
+\end{align*}
+
+**Regla del pulgar**: como el estadístico al 95% de confianza es 1,96, a veces se suele hacer un cálculo más sencillo que consiste en sumar y restar 2 desvíos estándar a la estimación puntual para obtener los intervalos de confianza.
+
+
+#### Test de hipótesis
+
+Una segunda utilidad consiste en realizar un test de hipótesis sobre el valor de los parámetros poblaciones desconocidos.
+
+En la mayoría de las aplicaciones, el interés principal reside en probar la hipótesis nula:
+
+\begin{align*}
+𝐻_{0}:𝛽_{1}=0 \\
+\end{align*}
+
+El estadístico que se emplea para probar la hipótesis nula se llama el estadístico t de $𝛽_{1}$ y se define como:
+
+\begin{align*}
+𝑡_{\hat{\beta}_{1}}=\frac{\hat{\beta}_{1}}{\hat{\sigma}_{\beta_{1}}} \\
+\end{align*}
+
+La regla de rechazo para $𝐻_{0}$: $\beta_{1}=0$ es:
+
+\begin{align*}
+|𝑡_{𝛽} |>𝑐 \\
+\end{align*}
+
+Donde $c$ es un valor crítico elegido de manera aproximada. Para determinar $c$ se especifica un nivel de significatividad, el cual puede ser interpretado como la probabilidad de rechazar la hipótesis nula cuando en realidad es verdadera. El nivel de significatividad más usado es del 5%, y el valor crítico asociado es 1,96.
+
+#### P-valor
+
+El procedimiento clásico del test de hipótesis consiste en elegir un valor crítico con un nivel de significatividad arbitrario y compararlo con el valor del estadístico t. Con eso se determina el rechazo o no de la hipótesis nula.
+
+Un procedimiento alternativo consiste en responder a la siguiente pregunta: **dado el valor observado del estadístico t, ¿cuál es el menor nivel de significatividad al que se habría rechazado la hipótesis nula?** Este nivel se conoce como el p-valor.
+
+Para obtenerlo se resta 100 al percentil correspondiente al valor t y se lo multiplica por 2 (para el test de dos colas). Cuanto menor sea el p-valor, mayor evidencia habrá para rechazar la hipótesis nula. Si, por ejemplo, el p-valor es menor a 0,05 tendremos evidencia para rechazar la hipótesis nula a un nivel de significatividad del 5%, y por tanto tendremos evidencia a favor (aunque no necesariamente conclusiva) de que el valor del parámetro poblacional es distinto a cero.
+
+
+### R-cuadrado
+
+El R2 es la métrica más utilizada para medir qué tan bien ajusta el modelo a la muestra. Este se calcula como el cociente entre la variación explicada y la variación total, y por este motivo se interpreta como la proporción de la variación muestral de $𝑦$ que es explicada por $𝑥$.
+
+\begin{align*}
+𝑅^2=𝑆𝐸𝐶/𝑆𝑇𝐶=1−𝑆𝑅𝐶/𝑆𝑇𝐶 \\
+\end{align*}
+
+
+Donde
+
+Suma total de cuadrados (STC): $\sum_{𝑖=1}^{𝑛}(𝑦_{𝑖}−\overline{y} )^{2}$ 
+
+Suma explicada de los cuadrados (SEC): $\sum_{𝑖=1}^{𝑛}(\hat{𝑦}−\overline{y} )^{2}$
+
+Suma residual de los cuadrados (SRC): $\sum_{𝑖=1}^{𝑛}\hat{u}_{i} ^{2}$ 
+
+Se lo conoce como R cuadrado porque es igual al cuadrado del coeficiente de correlación muestral entre $𝑦_{𝑖}$ y $\hat{y}_{i}$, y al coeficiente de correlación se lo suele denotar con la letra R.
+
+### Propiedades de MCO bajo los supuestos clásicos
+
+#### Consistencia de los parámetros
+**1. Linealidad y dependencia débil.** El modelo es lineal en sus parámetros, es estacionario y débilmente dependiente. En particular, la ley de los grandes números y el teorema del límite central pueden aplicarse a los promedios muestrales.
+
+**2. Ausencia de multicolinealidad.** No hay variables independientes que sean iguales entre sí, combinaciones lineales de las demás o iguales a una constante.
+
+**3. Media condicional cero.** Dadas las variables explicativas para todos los períodos, el valor esperado del error es cero. Las variables explicativas no se correlacionan contemporáneamente con el error (tampoco con los valores pasados si la serie es débilmente dependiente). Supone que no hay problemas de endogeneidad derivada, por ejemplo, de variables omitidas o error de medición. Para este supuesto es clave la especificación de la forma funcional del modelo.
+
+#### Además para asumir distribución normal se requiere
+
+**4. Homocedasticidad.** Los errores son contemporáneamente homocedásticos, lo que implica que la varianza del error es constante.
+
+**5. Ausencia de correlación serial.** Los errores en dos períodos distintos no están correlacionados.
+
+Bajo los supuestos 1 a 5, los estimadores de MCO tienen distribuciones asintóticamente normales. Además, los errores estándar usuales de MCO, los estadísticos t, los estadísticos F y los estadísticos ML son asintóticamente válidos.
+
+Los modelos con variables explicativas con tendencia satisfacen los supuestos 1 a 5, siempre y cuando sean estacionarios con tendencia determinística. Mientras las tendencias determinísticas se incluyan en las ecuaciones cuando sea necesario, los procedimientos de inferencia usuales son asintóticamente válidos.
+
+
+## Métricas para la selección de modelos
+
+Cuando hay muchos predictores posibles se necesita una estrategia para elegir a los mejores para utilizar en el modelo de regresión. Una estrategia común es hacer múltiples regresiones lineales sobre todos los predictores y descartar todas las variables cuyos p-valores sean mayores a 0,05. Este procedimiento no es correcto porque la significatividad estadística no siempre indica valor predictivo, y porque los p-valores no son buenos indicadores cuando dos o más predictores están correlacionados uno con el otro (problema de multicolinealidad).
+
+En su lugar, vamos a usar tres medidas de precisión predictiva:
+
+### 1. R2 ajustado
+
+El R2 convencional tiene como debilidad que no permite controlar por grados de libertad, entonces siempre que agreguemos más variables su valor va a aumentar sin importar que tan relevante sea esa variable. Una alternativa pensada para superar este problema es el R2 ajustado.
+
+\begin{align*}
+\overline{R}^{2}=1-(1-R^{2})\frac{T-1}{T-k-1} \\
+\end{align*}
+
+Donde 𝑇 es la cantidad de observaciones y 𝑘 es la cantidad de predictores. Esto es una mejora del R2, en la medida que no necesariamente va a aumentar con la incorporación de nuevos predictores. Usando esta medida, el mejor modelo será aquel con el valor más alto.
+
+
+### 2. Criterio de información de Akaike (AIC)
+
+Otro método es el criterio de información de Akaike, que definimos como:
+
+\begin{align*}
+AIC=Tlog(\frac{SRC}{T})+2(k+2)  \\
+\end{align*}
+
+Donde 𝑇 es la cantidad de observaciones usadas para la estimación y 𝑘 es la cantidad de predictores en el modelo. Los diferentes paquetes computacionales usan definiciones levemente distintas para el AIC, a pesar de que todos deberían llevar a seleccionar el mismo modelo.
+La parte de 𝑘+2 en la ecuación ocurre porque hay 𝑘+2 parámetros en el modelo: los 𝑘 coeficientes de los predictores, el intercepto y la varianza de los residuos.
+La idea es penalizar el ajuste del modelo con la cantidad de parámetros que necesitan ser estimados.
+
+
+### 3. Criterio de información bayesiano de Schwarz (BIC)
+
+Una medida relacionada es el criterio de información bayesiano de Schwarz:
+
+\begin{align*}
+BIC=Tlog(\frac{SRC}{T})+(k+2)log(T)  \\
+\end{align*}
+
+Al igual que con el AIC, minimizar el BIC tiene como objetivo dar con el mejor modelo. El modelo elegido por el BIC es el mismo que el elegido por el AIC o uno con menos términos. Esto es porque el BIC penaliza más la cantidad de parámetros que el AIC. 
+
+### ¿Qué métrica utilizar?
+
+* Si bien el **R2 ajustado** se usa ampliamente y ha existido durante más tiempo que las otras medidas, su tendencia a seleccionar demasiadas variables predictoras lo hace menos adecuado para la predicción.
+
+* A muchos estadísticos les gusta usar el **BIC** porque tiene la característica de que si existe un verdadero modelo subyacente, el BIC seleccionará ese modelo si se reciben suficientes datos. Sin embargo, rara vez hay un modelo subyacente verdadero, o si lo hubiera, seleccionar ese modelo no necesariamente dará los mejores pronósticos (porque las estimaciones de los parámetros pueden no ser precisas).
+
+* En consecuencia, se suele recomendar utilizar el **AIC** que tiene como objetivo la predicción. Si el valor de T es lo suficientemente grande, todos conducirán al mismo modelo. 
+
+
+
+## Resumen conceptual
+
+* El **método de MCO** es la estrategia más utilizada para estimar los parámetros poblacionales de un modelo lineal.
+
+* La fórmula de cálculo de los estimadores muestrales se deriva del **supuesto de media condicional cero**.
+
+* El **test de hipótesis** es un procedimiento que sirve para juzgar si el valor de un estimador muestral es compatible con el valor del parámetro poblacional.
+
+* El **p-valor** es una alternativa al test de hipótesis que tiene como ventaja que brinda más información que el método convencional en el que se elige un nivel de significancia arbitrario. Esta métrica indica cuál es el menor nivel de significancia al que se habría rechazado la hipótesis nula.
+
+* Para la **selección del mejor modelo** entre varias alternativas se debe utilizar una métrica que penalice por la cantidad de parámetros. Algunas opciones son el R2 ajustado, el AIC o el BIC. El R cuadrado convencional no es un buen indicador porque siempre aumenta con un mayor número de parámetros, y nos puede llevar a elegir un modelo que sobreajuste a los datos muestrales.
+
+
+
+# Módulo práctico
+
+
+## Paso 1. Limpiamos la memoria y cargamos las librerías
+
+Para comenzar limpiamos la memoria de R-studio con el cógido `rm(list=ls())`. Esto  va a permitir que el script corra más rápido. Luego vamos a cargar un conjunto de librerías que utilizaremos en esta clase con el código `library()`.
+
+```{r}
+
+#  Limpiamos la memoria
+rm(list=ls())
+
+# Abrimos librerias
+library(tidyverse)
+library(readxl)
+library(openxlsx)
+library(ggplot2)
+library(lubridate)
+library(forecast)
+library(gdata)
+library(ggfortify)
+library(kableExtra)
+
+```
+
+## Paso 2. Definimos el directorio y cargamos el archivo
+
+Con el código `setwd()` definimos una carpeta desde donde levantaremos los archivos para trabajar y adonde podremos guardar por default los archivos nuevos que generemos. Luego, con el código `read.xlsx()` levantamos el archivo de Excel con los datos. Dentro de ese código tenemos que especificar el nombre del archivo con su extensión ("Clase 2.xlsx) y el nombre de la hoja en donde se encuentran los datos que queremos levantar (sheet = "Base").
+
+```{r}
+
+# Establecemos directorio
+setwd("C:/Users/mcherkasky/Google Drive/CEPAL/Curso series de tiempo/Clase 2")
+
+# Levantamos archivo desde Excel 
+df <- read.xlsx("Clase 2.xlsx",sheet = "Base")
+
+```
+
+
+## Paso 3. Inspeccionamos los datos
+
+Con la función `head()` podemos dar un vistazo a las primeras observaciones. En este caso le pedimos que nos muestre las primeras 5 observaciones.
+
+```{r}
+
+# Inspeccionamos las primeras 5 observaciones
+head(df,5)
+
+```
+
+## Paso 4. Definimos la variable tiempo
+
+Definimos la variable tiempo con `as.Date()`. No obstante, cuando levantamos un archivo de Excel puede darse una inconsistencia entre la numeración de la fecha de ese programa y la de R. Esto es así porque R numera la fecha contando desde 01-01-1970 y Excel desde 1899-12-30. Por este motivo tenemos que indicarle a R en qué fecha comienza la cuenta para una variable fecha traída de Excel.
+
+```{r}
+
+# Definimos la variable tiempo
+df$Fecha<-as.Date(df$Fecha, origin = "1899-12-30")
+
+
+```
+
+
+## Paso 5. Aplicamos transformaciones a las series
+
+Una vez que tenemos la base con las variables con las que queremos trabajar podemos realizar un conjunto de operaciones o transformaciones a estas variables. En este caso nos interesa realizar la diferencia logarítmica de dos variables: el tipo de cambio nominal (TCN) y el índice de precios al consumidor (IPC)
+
+```{r}
+
+# Creamos variables en diferencia logarítmica
+df<-df %>% mutate(dlTCN = log(TCN) - lag(log(TCN)),
+                  dlIPC = log(IPC) - lag(log(IPC)))
+
+```
+
+## Paso 6. Creamos variables de series de tiempo
+
+De manera tal de preparar los datos para utilizar los códigos de los modelos, vamos a convertir las variables a series de tiempo. Para ello usamos la función `ts()`. Esta función la podemos aplicar a variables o incluso a una base de datos entera. Recordar que tenemos que indicar en la función el período en el cual comienza la serie y su frecuencia. En este caso comienza en el año 2004 y la frecuencia es trimestral (cuatro períodos sobre la base de un año).
+
+```{r}
+
+# Filtramos aquellos valores desde el año 2004
+df<-df %>%
+    filter(Fecha > "2004-01-01")
+
+# Definimos las series de tiempo
+dlTCN <- ts((df$dlTCN), start=c(2004,1), frequency = 4)
+dlIPC <- ts((df$dlIPC), start=c(2004,1), frequency = 4)
+l.dlIPC <- ts(lag((df$dlIPC)), start=c(2004,1), frequency = 4)
+
+```
+
+
+## Paso 7. Graficamos las series
+
+Para graficar las series de tipo de cambio y el IPC utilizaremos la libreria "ggfortify" que a su vez está basada en la conocida librería de "ggplot". Notar que en el código debemos especificar el nombre del eje horizontal `xlab()`, el nombre del eje vertical `ylab()`, el título del gráfico `ggtitle()` y las especificaciones de la leyenda `guides()`.
+
+```{r}
+
+# Graficamos
+autoplot(cbind(dlTCN,dlIPC), facets = FALSE)+
+  xlab("Fecha") +
+  ylab("Diferencia logarítmica") +
+  ggtitle("Inflación y tipo de cambio") +
+  guides(colour=guide_legend(title="Variables"))
+
+
+```
+
+
+## Paso 8. Estimamos un modelo por MCO
+
+Una vez preparados los datos vamos a estimar un modelo lineal por el método de mínimo cuadrados ordinarios, a partir de la función `tslm()`. Esta estimación la vamos a guardar con el nombre "modelo". En esta función tenemos que especificar la variable explicada (dlIPC) y a la derecha del signo "~" todas las variables explicativas (dlTCN+l.dlIPC). Esta función va a incorporar por default un intercepto en la estimación, a diferencia de otros programas como E-Views en donde tenemos que escribirlo en la ecuación.
+
+El modelo que vamos a estimar es el siguiente:
+
+\begin{align*}
+\Delta \ln{IPC_{t}} =\beta_{0}+\beta_{1}  \Delta \ln{TCN_{t}}+\beta_{2} \Delta \ln{IPC_{t-1}}+u_{t} \\
+\end{align*}
+
+```{r}
+
+# Estimación por MCO
+modelo <- tslm(dlIPC ~ dlTCN+l.dlIPC)
+
+
+```
+
+Luego vamos a utilizar la función `summary()` para presentar un conjunto de indicadores que se obtienen como resultado de la estimación del modelo. La primera columna de la tabla debajo del título "Coefficients" tiene el valor de los parámetros muestrales (estimadores de los parámetros poblacionales), la segunda columna tiene los desvíos estándar asociados a cada uno de los estimadores, la tercera columna tiene los estadísticos de prueba de la distribución T de Student (valores de la primera columna dividos por los valores de la segunda), y la columna 4 tiene los p-valores (menor nivel de significancia al que se habría rechazado la hipótesis nula). A su vez, debajo de la tabla podemos observar el valor del desvío estándar del residuo, y el R-cuadrado de la regresión.
+
+```{r}
+
+# Presentación de los resultados
+summary(modelo)
+
+```
+
+## Paso 9. Calculamos los intervalos de confianza
+
+Tomando el coeficiente asociado al tipo de cambio y su desvío estándar, vamos a obtener el intervalo de confianza para este parámetro conocido como *pass-through*. De acuerdo a estas estimaciones, el pass-through se encontraría entre 0.10 y 0.22 a un nivel de confianza del 95%.
+
+```{r}
+
+# Intervalo de confiaza al 95%
+passthrough_puntual<-coef(summary(modelo))[2,1]
+passthrough_superior<-coef(summary(modelo))[2,1]+1.96*coef(summary(modelo))[2,2]
+passthrough_inferior<-coef(summary(modelo))[2,1]-1.96*coef(summary(modelo))[2,2]
+
+passthrough_superior
+passthrough_inferior
+
+```
+
+
+
+## Paso 10. Calculamos métricas para la selección de variables
+
+Vamos a estimar tres combinaciones posibles de un modelo que tenga como variables explicativas de la inflación al tipo de cambio y a la inflación pasada para evaluar cuál es el que ajusta mejor y por tanto cuáles son las variables que deberiamos considerar. Como ya vimos, el R cuadrado no es un buen indicador: siempre va a mejorar cuántas más variables incorporemos. De forma alternativa tenemos al R cuadrado ajustado, el criterio de Akaike (AIC) y el criterio de información bayesiano de Schwarz (BIC).
+
+
+```{r}
+
+# Selección de variables para mejorar la proyección
+modelo1 <- tslm(dlIPC ~ dlTCN)
+modelo2 <- tslm(dlIPC ~ l.dlIPC)
+modelo3 <- tslm(dlIPC ~ dlTCN+l.dlIPC)
+
+# Cálculo detallado
+t=length(dlIPC)
+k=length(coefficients(modelo1))-1
+resid=dlIPC-fitted.values(modelo1) # Alternativa 1
+resid=residuals(modelo1) # Alternativa 2
+
+SCR=sum((resid)^2)
+R2<-sum((fitted.values(modelo1)-mean(dlIPC))^2)/sum((dlIPC-mean(dlIPC))^2)
+R2A<-1-(1-R2)*(t-1)/(t-k-1)
+AIC=t*log(SCR/t)+2*(k+2)
+AICc=AIC+(2*(k+2)*(k+3)/(t-k-3))
+BIC=t*log(SCR/t)+(k+2)*log(t)
+
+
+```
+
+Estos mismos indicadores los podemos obtener de manera más sencilla con el código `CV()`. Entre paréntesis vamos a introducir el nombre que le dimos al objeto del modelo. Luego, vamos a construir una tabla con todos los resultados de manera tal de poder comparar todos los valores obtenidos. Se puede ver que el modelo que obtiene el mejor resultado es el tercero: tiene los menores valores del AIC y BIC, y el mayor valor del R-cuadrado ajustado.
+
+```{r}
+
+# Tabla con resultados ordenados
+tabla<-data.frame(cbind(c(1,0,1),c(0,1,1))) %>%
+  rename("TCN"=1,"Inercia"=2) %>%
+  cbind(rbind(CV(modelo1),CV(modelo2),CV(modelo3)))
+
+kable(tabla, align=rep('c', 5), format.args = list(big.mark = ".")) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), font_size = 14)
+
+```
+
+# Referencias
+
+* **Enders**, W. (2008). Applied econometric time series. John Wiley & Sons.
+
+* **Hyndman**, R.J., & **Athanasopoulos**, G. (2018). Forecasting: principles and practice, 2nd edition, OTexts: Melbourne, Australia. OTexts.com/fpp2.
+
+* **Wooldridge**, J. M. (2015). Introductory econometrics: A modern approach. Cengage learning.
+
+
+
+
+
+
+
+  
+
+  
